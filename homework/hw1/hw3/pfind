@@ -1,0 +1,134 @@
+/*
+Joseph Gargiulo
+CS 392 - Section 
+I pledge my honor that I have abided by the Stevens Honor System
+*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <string.h>
+#include <limits.h>
+#include <errno.h>
+
+// Function to convert file mode to permission string (rwxrwxrwx)
+char* get_p_string(__mode_t mode) {
+    static char buff[16] = {0}; // Static buffer to hold permission string
+    int i = 0;
+
+    // User permissions
+    buff[i++] = (mode & S_IRUSR) ? 'r' : '-';
+    buff[i++] = (mode & S_IWUSR) ? 'w' : '-';
+    buff[i++] = (mode & S_IXUSR) ? 'x' : '-';
+
+    // Group permissions
+    buff[i++] = (mode & S_IRGRP) ? 'r' : '-';
+    buff[i++] = (mode & S_IWGRP) ? 'w' : '-';
+    buff[i++] = (mode & S_IXGRP) ? 'x' : '-';
+
+    // Others permissions
+    buff[i++] = (mode & S_IROTH) ? 'r' : '-';
+    buff[i++] = (mode & S_IWOTH) ? 'w' : '-';
+    buff[i++] = (mode & S_IXOTH) ? 'x' : '-';
+
+    buff[i] = '\0'; // Null-terminate the string
+    return buff;
+}
+
+// Recursive function to find files with specified permissions
+int find_files(char *dir, char* permissions) {
+    DIR* dp;
+    struct dirent* dirp;
+    struct stat fi;
+    
+    // Open the directory
+    if (!(dp = opendir(dir))) {
+        fprintf(stderr, "Error: Cannot open directory '%s'. %s.\n", dir, strerror(errno));
+        return EXIT_FAILURE;
+    }
+
+    while ((dirp = readdir(dp)) != NULL) {
+        char fullpath[PATH_MAX];
+        sprintf(fullpath, "%s/%s", dir, dirp->d_name);
+
+        // Skip . and ..
+        if (strcmp(dirp->d_name, "..") == 0 || strcmp(dirp->d_name, ".") == 0) {
+            continue;
+        } 
+
+        // Get file status
+        if (stat(fullpath, &fi) != 0) {
+            continue;
+        }
+
+        // Check if permissions match
+        if (strcmp(permissions, get_p_string(fi.st_mode)) == 0) {
+            printf("%s\n", fullpath);
+        }
+
+        // Recursively search if directory
+        if (S_ISDIR(fi.st_mode)) {
+            if (strcmp(dirp->d_name, ".") != 0) { // Avoid infinite loop
+                if (find_files(fullpath, permissions) == EXIT_FAILURE) {
+                    closedir(dp);
+                    return EXIT_FAILURE;
+                }
+            }
+        }
+    }
+
+    closedir(dp);
+    return EXIT_SUCCESS;
+}
+
+int main(int argc, char *argv[]) {
+    // Check for correct number of arguments
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <directory> <permissions>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    // Check if the directory exists and is accessible
+    if (access(argv[1], F_OK) != 0) {
+        fprintf(stderr, "Error: Directory '%s' does not exist or is not accessible.\n", argv[1]);
+        return EXIT_FAILURE;
+    }
+
+    // Validate the permissions string
+    if (strlen(argv[2]) != 9) {
+        fprintf(stderr, "Error: Permissions string '%s' is invalid.\n", argv[2]);
+        return EXIT_FAILURE;
+    }
+    for (int i = 0; i < 9; ++i) {
+        if (i % 3 == 0 && argv[2][i] != 'r' && argv[2][i] != '-') {
+            fprintf(stderr, "Error: Permissions string '%s' is invalid.\n", argv[2]);
+            return EXIT_FAILURE;
+        }
+        if (i % 3 == 1 && argv[2][i] != 'w' && argv[2][i] != '-') {
+            fprintf(stderr, "Error: Permissions string '%s' is invalid.\n", argv[2]);
+            return EXIT_FAILURE;
+        }
+        if (i % 3 == 2 && argv[2][i] != 'x' && argv[2][i] != '-') {
+            fprintf(stderr, "Error: Permissions string '%s' is invalid.\n", argv[2]);
+            return EXIT_FAILURE;
+        }
+    }
+
+    // Get the absolute path of the directory
+    char curpath[PATH_MAX];
+    if (realpath(argv[1], curpath) == NULL) {
+        fprintf(stderr, "Error: Cannot resolve path '%s'. %s.\n", argv[1], strerror(errno));
+        return EXIT_FAILURE;
+    }
+
+    // Call the find_files function
+    if (find_files(curpath, argv[2]) == EXIT_FAILURE) {
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+
+
